@@ -9,7 +9,7 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 
 from backend.app.services.memora_service import answer_query
-
+from backend.app.services.experts_service import get_experts
 
 # ============================================================
 # 1. FLASK CONFIGURATION
@@ -389,11 +389,45 @@ def ask():
 # 10. START SERVER
 # ============================================================
 
-if __name__ == "__main__":
+# ============================================================
+# 10. EXPERTS API
+# Requires an authenticated user.
+# ============================================================
 
-    # Debug mode is only for local development.
+@app.route("/experts", methods=["GET"])
+def experts():
+
+    user = current_user()
+
+    if not user:
+        return jsonify({
+            "error": "Please log in to access Experts."
+        }), 401
+
+    try:
+        results = get_experts()
+
+        return jsonify({
+            "total": len(results),
+            "experts": results
+        }), 200
+
+    except Exception:
+        app.logger.exception(
+            "Experts extraction failed"
+        )
+
+        return jsonify({
+            "error": "Could not retrieve experts."
+        }), 500
+
+
+if __name__ == "__main__":
     app.run(
         host="127.0.0.1",
         port=5000,
-        debug=True
+        debug=False,
+        use_reloader=False
     )
+
+   

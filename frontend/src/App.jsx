@@ -889,6 +889,246 @@ function KnowledgeGraph() {
   );
 }
 
+
+// ============================================================
+// EXPERTS
+// ============================================================
+
+
+function Experts() {
+  const [experts, setExperts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [roleFilter, setRoleFilter] = useState("All");
+
+  useEffect(() => {
+    let active = true;
+
+    apiRequest("/experts")
+      .then((data) => {
+        if (active) {
+          setExperts(Array.isArray(data.experts) ? data.experts : []);
+        }
+      })
+      .catch((err) => {
+        if (active) setError(err.message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const filteredExperts = experts.filter((expert) => {
+    const query = searchTerm.trim().toLowerCase();
+
+    const evidenceRecords = Array.isArray(expert.evidence)
+      ? expert.evidence
+      : expert.evidence
+        ? [expert.evidence]
+        : [];
+
+    const name =
+      expert.name ||
+      expert.person_name ||
+      expert.person ||
+      "";
+
+    const searchableText = [
+      name,
+      expert.role,
+      ...(expert.roles || []),
+      ...evidenceRecords.flatMap((item) => [
+        item.document_title,
+        item.role,
+        item.source_type,
+        item.context,
+      ]),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    const matchesSearch = searchableText.includes(query);
+
+    const roles = [
+      expert.role,
+      ...(expert.roles || []),
+      ...evidenceRecords.map((item) => item.role),
+    ].filter(Boolean);
+
+    const matchesRole =
+      roleFilter === "All" || roles.includes(roleFilter);
+
+    return matchesSearch && matchesRole;
+  });
+
+  return (
+    <section className="experts-page">
+      <div className="page-heading">
+        <p className="eyebrow">COMPANY KNOWLEDGE</p>
+        <h1>Experts</h1>
+        <p className="page-description">
+          People and role references identified in indexed enterprise documents.
+        </p>
+      </div>
+
+      <div className="graph-notice">
+        <strong>Evidence-based extraction</strong>
+        <span>
+          These are candidate people references found in documents.
+          A contact or document owner is not automatically confirmed
+          as an employee or subject-matter expert.
+        </span>
+      </div>
+
+      {loading && (
+        <div className="feedback-panel">
+          <h3>Finding people references</h3>
+          <p>Loading records extracted from enterprise documents.</p>
+          <div className="loading-bar" />
+        </div>
+      )}
+
+      {error && (
+        <div className="feedback-panel error-panel">
+          <h3>Unable to load Experts</h3>
+          <p>{error}</p>
+        </div>
+      )}
+
+      {!loading && !error && (
+        <>
+          <div className="experts-toolbar">
+            <input
+              type="text"
+              placeholder="Search people or documents..."
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+            />
+
+            <select
+              value={roleFilter}
+              onChange={(event) => setRoleFilter(event.target.value)}
+            >
+              <option value="All">All Roles</option>
+              <option value="Document Owner">Document Owner</option>
+              <option value="Contact">Contact</option>
+              <option value="Reviewer">Reviewer</option>
+              <option value="Escalation Owner">Escalation Owner</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSearchTerm("");
+                setRoleFilter("All");
+              }}
+            >
+              Clear
+            </button>
+          </div>
+
+          <p className="experts-result-count">
+            Showing {filteredExperts.length} of {experts.length} people
+          </p>
+
+          <div className="graph-stats">
+            <div>
+              <strong>{experts.length}</strong>
+              <span>People references</span>
+            </div>
+          </div>
+
+          {filteredExperts.length === 0 ? (
+            <div className="placeholder-panel">
+              <h2>No matching people found</h2>
+              <p>
+                Try another name, document title or role.
+              </p>
+            </div>
+          ) : (
+            <div className="overview-grid">
+              {filteredExperts.map((expert, index) => {
+                const evidenceRecords = Array.isArray(expert.evidence)
+                  ? expert.evidence
+                  : expert.evidence
+                    ? [expert.evidence]
+                    : [];
+
+                const name =
+                  expert.name ||
+                  expert.person_name ||
+                  expert.person ||
+                  "Unnamed person";
+
+                const firstEvidence = evidenceRecords[0] || {};
+
+                const role =
+                  expert.role ||
+                  firstEvidence.role ||
+                  (expert.roles || []).join(", ") ||
+                  "Role not specified";
+
+                return (
+                  <article
+                    className="placeholder-panel"
+                    key={`${name}-${index}`}
+                  >
+                    <span className="placeholder-label">
+                      {role}
+                    </span>
+
+                    <h2>{name}</h2>
+
+                    <p>
+                      <strong>Evidence records:</strong>{" "}
+                      {evidenceRecords.length}
+                    </p>
+
+                    {evidenceRecords.map((item, evidenceIndex) => (
+                      <details
+                        className="evidence-item"
+                        key={evidenceIndex}
+                      >
+                        <summary>
+                          {item.document_title || "Source document"}
+                        </summary>
+
+                        <p>
+                          <strong>Role:</strong>{" "}
+                          {item.role || "Not specified"}
+                        </p>
+
+                        <p>
+                          <strong>Source:</strong>{" "}
+                          {item.source_type || "Not specified"}
+                        </p>
+
+                        <p>
+                          <strong>Context:</strong>{" "}
+                          {typeof item.context === "string"
+                            ? item.context
+                            : "No context available."}
+                        </p>
+                      </details>
+                    ))}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+
 // ============================================================
 // WORKSPACE
 // ============================================================
@@ -1291,9 +1531,11 @@ function Workspace({ user, onLogout }) {
 
           {/* OTHER WORKSPACE SECTIONS */}
           {page === "graph" && <KnowledgeGraph />}
+          {page === "experts" && <Experts />}
           {page !== "overview" &&
             page !== "ask" &&
-            page !== "graph" && (
+            page !== "graph" &&
+            page !== "experts" && (
             <section>
               <div className="page-heading">
                 <p className="eyebrow">
