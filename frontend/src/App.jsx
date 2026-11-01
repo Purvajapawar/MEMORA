@@ -1128,6 +1128,299 @@ function Experts() {
   );
 }
 
+  
+
+// ============================================================
+// DECISIONS
+// ============================================================
+
+function getDecisionEventType(record) {
+  // Classify the actual event description first. The title is only a
+  // fallback because it may mention later follow-ups unrelated to this event.
+  const eventText = [
+    record.decision,
+    record.approval,
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  const titleText = (record.title || "").toLowerCase();
+  const text = eventText || titleText;
+
+  // Give explicit completed actions priority over incidental words such as
+  // "requested" in phrases like "requested follow-up".
+  if (/\b(notified|notification|acknowledged receipt|customer acknowledged)\b/.test(text)) return "Notified";
+  if (/\b(approved|goodwill credit approved|approval granted|sign-off|signed off)\b/.test(text)) return "Approval recorded";
+  if (/\b(published|publication)\b/.test(text)) return "Published";
+  if (/\b(review completed|reviewed|architecture review|review)\b/.test(text)) return "Reviewed";
+  if (/\b(draft created|drafted|draft)\b/.test(text)) return "Draft";
+  if (/\b(requested|request|seeks approval|approval requested)\b/.test(text)) return "Requested";
+  if (/\b(chose|selected|final decision|decided)\b/.test(text)) return "Decision recorded";
+  return "Recorded event";
+}
+
+function Decisions() {
+  const [decisions, setDecisions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("All");
+  const [eventFilter, setEventFilter] = useState("All");
+
+  async function loadDecisions() {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await apiRequest("/decisions");
+      setDecisions(Array.isArray(data.decisions) ? data.decisions : []);
+    } catch (err) {
+      setError(err.message || "Unable to load decision records.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadDecisions();
+  }, []);
+
+  const categories = [
+    "All",
+    ...new Set(decisions.map((item) => item.category).filter(Boolean)),
+  ];
+
+  const eventTypes = [
+    "All",
+    ...new Set(decisions.map(getDecisionEventType)),
+  ];
+
+  const filteredDecisions = decisions.filter((item) => {
+    const searchable = [
+      item.title,
+      item.decision,
+      item.date,
+      item.category,
+      item.approval,
+      item.source_type,
+      item.doc_id,
+    ].filter(Boolean).join(" ").toLowerCase();
+
+    return (
+      searchable.includes(searchTerm.trim().toLowerCase()) &&
+      (categoryFilter === "All" || item.category === categoryFilter) &&
+      (eventFilter === "All" || getDecisionEventType(item) === eventFilter)
+    );
+  });
+
+  const uniqueDocuments = new Set(decisions.map((item) => item.doc_id).filter(Boolean)).size;
+  const approvals = decisions.filter((item) =>
+    getDecisionEventType(item) === "Approval recorded"
+  ).length;
+  const technicalChoices = decisions.filter((item) =>
+    getDecisionEventType(item) === "Decision recorded"
+  ).length;
+
+  return (
+    <section className="decisions-page">
+      <style>{`
+        .decisions-page { width: 100%; color: #292326; }\n        .decisions-page .page-heading h1 { color: #292326 !important; opacity: 1 !important; }
+        .decisions-notice { margin: 22px 0; }
+        .decisions-stats { grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); }
+        .decisions-toolbar { display: grid; grid-template-columns: minmax(220px, 2fr) repeat(2, minmax(150px, 1fr)) auto; gap: 10px; margin: 22px 0 12px; }
+        .decisions-toolbar input, .decisions-toolbar select { width: 100%; min-width: 0; padding: 12px 14px; border: 1px solid #e5dce0; border-radius: 9px; background: #fff; color: #292326; font: inherit; }
+        .decision-clear, .decision-refresh, .decision-retry { border: 1px solid #e5dce0; border-radius: 9px; padding: 10px 14px; background: #fff; color: #6d1f35; font: inherit; cursor: pointer; }
+        .decisions-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 14px 0; color: #777078; font-size: 13px; }
+        .decisions-list { display: grid; gap: 14px; }
+        .decision-card { padding: 20px; border: 1px solid #e9e1e4; border-radius: 12px; background: #fff; box-shadow: 0 4px 14px #32101b08; }
+        .decision-card-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+        .decision-event-badge { display: inline-flex; padding: 5px 10px; border-radius: 20px; background: #f6edf0; color: #6d1f35; font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+        .decision-date { color: #817981; font-size: 12px; }
+        .decision-card h2 { margin: 0 0 9px; color: #292326; font-size: 18px; line-height: 1.4; }
+        .decision-summary { margin: 0; color: #5f5860; line-height: 1.65; white-space: pre-wrap; }
+        .decision-metadata { display: flex; flex-wrap: wrap; gap: 7px; margin: 14px 0; }
+        .decision-metadata span { padding: 5px 8px; border-radius: 6px; background: #f7f5f5; color: #716970; font-size: 11px; }
+        .decision-approval { padding: 11px 13px; border-left: 3px solid #9c7180; background: #fbf8f9; color: #5f5860; font-size: 13px; line-height: 1.6; }
+        .decision-evidence { margin-top: 12px; padding-top: 11px; border-top: 1px solid #eee8eb; }
+        .decision-evidence summary { color: #6d1f35; cursor: pointer; font-size: 13px; font-weight: 600; }
+        .decision-evidence p { color: #716970; font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+        @media (max-width: 760px) {
+          .decisions-toolbar { grid-template-columns: 1fr; }
+          .decision-card { padding: 16px; }
+          .decision-card-top { align-items: flex-start; flex-direction: column; }
+        }
+      `}</style>
+      <div className="page-heading">
+        <p className="eyebrow">COMPANY KNOWLEDGE</p>
+        <h1>Decisions</h1>
+        <p className="page-description">
+          Explore decision records, approvals, and the events documented around them.
+        </p>
+      </div>
+
+      <div className="graph-notice decisions-notice">
+        <strong>Evidence-based decision history</strong>
+        <span>
+          Records may include drafts, requests, reviews, approvals, and publication
+          events. Event labels describe what the source says; they do not imply that
+          every record is a final approved decision.
+        </span>
+      </div>
+
+      {loading && (
+        <div className="feedback-panel">
+          <h3>Loading decision records</h3>
+          <p>Retrieving decisions and supporting evidence from MEMORA.</p>
+          <div className="loading-bar" />
+        </div>
+      )}
+
+      {error && !loading && (
+        <div className="feedback-panel error-panel">
+          <h3>Unable to load Decisions</h3>
+          <p>{error}</p>
+          <button type="button" className="decision-retry" onClick={loadDecisions}>
+            Try again
+          </button>
+        </div>
+      )}
+
+      {!loading && !error && (
+        <>
+          <div className="graph-stats decisions-stats">
+            <div>
+              <strong>{decisions.length}</strong>
+              <span>Decision events</span>
+            </div>
+            <div>
+              <strong>{uniqueDocuments}</strong>
+              <span>Source documents</span>
+            </div>
+            <div>
+              <strong>{approvals}</strong>
+              <span>Approval-related records</span>
+            </div>
+            <div>
+              <strong>{technicalChoices}</strong>
+              <span>Recorded choices</span>
+            </div>
+          </div>
+
+          <div className="decisions-toolbar">
+            <input
+              type="search"
+              aria-label="Search decisions"
+              placeholder="Search decisions, documents or evidence..."
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+            />
+
+            <select
+              aria-label="Filter decisions by category"
+              value={categoryFilter}
+              onChange={(event) => setCategoryFilter(event.target.value)}
+            >
+              {categories.map((category) => (
+                <option key={category} value={category}>
+                  {category === "All" ? "All categories" : category}
+                </option>
+              ))}
+            </select>
+
+            <select
+              aria-label="Filter decisions by event type"
+              value={eventFilter}
+              onChange={(event) => setEventFilter(event.target.value)}
+            >
+              {eventTypes.map((eventType) => (
+                <option key={eventType} value={eventType}>
+                  {eventType === "All" ? "All event types" : eventType}
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              className="decision-clear"
+              onClick={() => {
+                setSearchTerm("");
+                setCategoryFilter("All");
+                setEventFilter("All");
+              }}
+            >
+              Clear
+            </button>
+          </div>
+
+          <div className="decisions-list-heading">
+            <p>
+              Showing <strong>{filteredDecisions.length}</strong> of{" "}
+              <strong>{decisions.length}</strong> records
+            </p>
+            <button type="button" className="decision-refresh" onClick={loadDecisions}>
+              ↻ Refresh
+            </button>
+          </div>
+
+          {filteredDecisions.length === 0 ? (
+            <div className="placeholder-panel">
+              <h2>No matching decision records</h2>
+              <p>Try a different search term or filter.</p>
+            </div>
+          ) : (
+            <div className="decisions-list">
+              {filteredDecisions.map((item, index) => {
+                const eventType = getDecisionEventType(item);
+                const evidenceText = Array.isArray(item.evidence)
+                  ? item.evidence.join("\n\n")
+                  : item.evidence;
+
+                return (
+                  <article
+                    className="decision-card"
+                    key={item.id || `${item.doc_id || item.title}-${item.date}-${index}`}
+                  >
+                    <div className="decision-card-top">
+                      <span className="decision-event-badge">{eventType}</span>
+                      <span className="decision-date">{item.date || "Date not specified"}</span>
+                    </div>
+
+                    <h2>{item.title || "Untitled decision record"}</h2>
+                    <p className="decision-summary">
+                      {item.decision || "No decision description was extracted."}
+                    </p>
+
+                    <div className="decision-metadata">
+                      {item.category && <span>{item.category}</span>}
+                      {item.source_type && <span>{item.source_type}</span>}
+                      {item.doc_id && <span>Document: {item.doc_id}</span>}
+                    </div>
+
+                    {item.approval && (
+                      <p className="decision-approval">
+                        <strong>Approval evidence:</strong> {item.approval}
+                      </p>
+                    )}
+
+                    {(evidenceText || item.source_type || item.doc_id) && (
+                      <details className="decision-evidence">
+                        <summary>View source evidence</summary>
+                        {evidenceText && <p>{evidenceText}</p>}
+                        {item.source_type && (
+                          <p><strong>Source type:</strong> {item.source_type}</p>
+                        )}
+                        {item.doc_id && (
+                          <p><strong>Document ID:</strong> {item.doc_id}</p>
+                        )}
+                      </details>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
 
 // ============================================================
 // WORKSPACE
@@ -1532,10 +1825,12 @@ function Workspace({ user, onLogout }) {
           {/* OTHER WORKSPACE SECTIONS */}
           {page === "graph" && <KnowledgeGraph />}
           {page === "experts" && <Experts />}
+          {page === "decisions" && <Decisions />}
           {page !== "overview" &&
             page !== "ask" &&
             page !== "graph" &&
-            page !== "experts" && (
+            page !== "experts" &&
+            page !== "decisions" && (
             <section>
               <div className="page-heading">
                 <p className="eyebrow">

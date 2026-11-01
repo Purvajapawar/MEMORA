@@ -10,6 +10,7 @@ from flask_sqlalchemy import SQLAlchemy
 
 from backend.app.services.memora_service import answer_query
 from backend.app.services.experts_service import get_experts
+from backend.app.services.decisions_service import get_decisions
 
 # ============================================================
 # 1. FLASK CONFIGURATION
@@ -422,7 +423,40 @@ def experts():
         }), 500
 
 
+# ============================================================
+# DECISIONS API
+# Requires an authenticated user.
+# ============================================================
+
+@app.route("/decisions", methods=["GET"])
+def decisions():
+
+    user = current_user()
+
+    if not user:
+        return jsonify({
+            "error": "Please log in to access Decisions."
+        }), 401
+
+    try:
+        results = get_decisions()
+
+        return jsonify({
+            "total": len(results),
+            "decisions": results
+        }), 200
+
+    except Exception:
+        app.logger.exception("Decisions extraction failed")
+
+        return jsonify({
+            "error": "Could not retrieve decisions."
+        }), 500
+
+
 if __name__ == "__main__":
+    print("DECISIONS ROUTE:", app.view_functions.get("decisions"))
+    print("ALL ROUTES:", app.url_map)
     app.run(
         host="127.0.0.1",
         port=5000,
@@ -430,4 +464,3 @@ if __name__ == "__main__":
         use_reloader=False
     )
 
-   
